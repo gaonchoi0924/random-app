@@ -1,64 +1,71 @@
-def add_custom_devices(devices, power_rates):
-    print("\n[추가 기기 등록] 기본 기기 외에 추가할 가전제품이 있나요?")
-    
-    # 몇 개를 추가할지 입력받아 for 반복문 실행
-    count = int(input("추가할 기기 개수를 입력하세요 (없으면 0 입력): "))
-    
-    for i in range(count):
-        name = input(f"  {i+1}번째 추가 기기 이름: ")
-        watt = int(input(f"  '{name}'의 소비전력(W)을 입력하세요: "))
-        
-        # 리스트 함수 append()를 사용해 기존 리스트에 새 항목 추가
-        devices.append(name)
-        power_rates.append(watt)
-        print(f"  -> '{name}({watt}W)' 등록 완료!\n")
+import streamlit as st
 
-
-# 2. 전체 전기 사용량을 계산하고 판별하는 def 함수 정의
-def calculate_electricity(devices, power_rates):
+# 1. 계산 기능을 담당하는 def 함수 정의
+def calculate_electricity(devices, power_rates, hours_list):
     usage_list = []       # 기기별 계산된 전력량(Wh)을 담을 리스트
     formula_parts = []    # 계산식 문자열을 담을 리스트
 
-    print("\n[사용 시간 입력]")
-    # 기본 기기 + 추가된 기기까지 전체 리스트 길이만큼 for문 반복
+    # 2. for 반복문을 사용해 각 기기의 전력량 계산
     for i in range(len(devices)):
-        hours = float(input(f"{devices[i]} 하루 사용 시간(시간)을 입력하세요: "))
-        
-        # 전력량(Wh) = 소비전력(W) × 사용시간(h)
-        wh = power_rates[i] * hours
-        usage_list.append(wh)
-        formula_parts.append(f"{power_rates[i]}W×{hours}h")
+        wh = power_rates[i] * hours_list[i]
+        usage_list.append(wh)  # 리스트 함수 append()
+        formula_parts.append(f"{power_rates[i]}W×{hours_list[i]}h")
 
-    # 리스트 함수 sum()으로 총합 계산
+    # 리스트 함수 sum()으로 총 사용량 계산
     total_wh = sum(usage_list)
     total_kwh = total_wh / 1000
 
-    # 계산식 및 총 사용량 출력
+    # 스트림릿 화면에 계산식 및 결과 출력 (print 대신 st.write / st.info 사용)
     formula_str = " + ".join(formula_parts)
-    print("\n" + "=" * 50)
-    print(f"[계산식] ({formula_str}) ÷ 1000")
-    print(f"[총 전기 사용량] 하루 {total_kwh:.2f} kWh ({total_wh:.0f} Wh)")
-    print("=" * 50)
+    st.divider()
+    st.subheader("📊 계산 결과")
+    st.write(f"**[계산식]** `({formula_str}) ÷ 1000`")
+    st.info(f"**[총 전기 사용량]** 하루 **{total_kwh:.2f} kWh** ({total_wh:.0f} Wh)")
 
-    # if 조건문으로 평균 대비 사용량 평가
+    # 3. if 조건문으로 평균 대비 사용량 평가
     if total_kwh <= 2.0:
-        print("결과: 매우 훌륭합니다! 전기를 아주 아껴 쓰고 계시네요.")
+        st.success("결과: 매우 훌륭합니다! 전기를 아주 아껴 쓰고 계시네요.")
     elif total_kwh <= 4.0:
-        print("결과: 평균적인 수준으로 적당히 잘 사용하고 있습니다.")
+        st.warning("결과: 평균적인 수준으로 적당히 잘 사용하고 있습니다.")
     else:
-        print("결과: 평균보다 사용량이 많습니다. 안 쓰는 기기의 전원을 꺼보세요!")
+        st.error("결과: 평균보다 사용량이 많습니다. 안 쓰는 기기의 전원을 꺼보세요!")
 
 
-# --- 프로그램 실행 영역 ---
+# --- 스트림릿 화면 구성 영역 ---
+st.title("⚡ 나의 하루 전기 사용량 계산기")
 
-# 기본 기기 이름과 소비전력(W) 리스트
+# 기본 기기 리스트
 device_names = ["핸드폰 충전", "TV", "컴퓨터", "방 불(조명)"]
 watts = [15, 150, 300, 40]
 
-print("=== 나의 하루 전기 사용량 계산기 ===")
+# 추가 기기 입력 섹션
+st.subheader("1. 추가 기기 등록")
+add_count = st.number_input("추가할 기기 개수 (없으면 0)", min_value=0, max_value=10, value=0, step=1)
 
-# 1단계: 사용자 기기 추가 함수 호출
-add_custom_devices(device_names, watts)
+for i in range(int(add_count)):
+    col1, col2 = st.columns(2)
+    with col1:
+        name = st.text_input(f"추가 기기 {i+1} 이름", key=f"name_{i}")
+    with col2:
+        watt = st.number_input(f"추가 기기 {i+1} 소비전력(W)", min_value=0, value=100, step=10, key=f"watt_{i}")
+    
+    # 이름이 입력되었을 때만 리스트에 추가
+    if name:
+        device_names.append(name)
+        watts.append(watt)
 
-# 2단계: 최종 리스트로 전기 사용량 계산 함수 호출
-calculate_electricity(device_names, watts)
+# 사용 시간 입력 섹션
+st.subheader("2. 하루 사용 시간(시간) 입력")
+hours_input_list = []
+
+for i in range(len(device_names)):
+    h = st.number_input(
+        f"{device_names[i]} ({watts[i]}W) 사용 시간", 
+        min_value=0.0, max_value=24.0, value=0.0, step=0.5, 
+        key=f"hour_{i}"
+    )
+    hours_input_list.append(h)
+
+# 계산 버튼 클릭 시 def 함수 실행
+if st.button("전기 사용량 계산하기", type="primary"):
+    calculate_electricity(device_names, watts, hours_input_list)
