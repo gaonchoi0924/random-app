@@ -1,352 +1,473 @@
-Python
-import pygame
-import random
-import math
-import sys
+import streamlit as st
+import streamlit.components.v1 as components
 
-# 초기화
-pygame.init()
+st.set_page_config(page_title="DELTARUNE - THE ROARING KNIGHT", layout="centered")
 
-# 화면 설정
-WIDTH, HEIGHT = 640, 480
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("DELTARUNE - THE ROARING KNIGHT (Fan Mini-Game)")
-clock = pygame.time.Clock()
+# 배경을 검은색으로 맞추는 CSS
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #000000;
+        color: #FFFFFF;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# 색상 정의
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-RED = (255, 0, 0)
-YELLOW = (255, 255, 0)
-CYAN = (0, 255, 255)
-PURPLE = (160, 32, 240)
-DARK_PURPLE = (60, 0, 100)
-GRAY = (128, 128, 128)
-GREEN = (0, 255, 0)
+st.title("⚔️ DELTARUNE - THE ROARING KNIGHT")
+st.caption("게임 화면을 한 번 클릭한 뒤 키보드로 조작하세요. (방향키: 이동 / Z 또는 Enter: 선택 / Shift: 저속 이동)")
 
-# 폰트 설정
-font_main = pygame.font.SysFont("malgungothic", 20, bold=True)
-font_small = pygame.font.SysFont("malgungothic", 15)
-font_title = pygame.font.SysFont("arial", 28, bold=True)
+game_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    font-family: 'Malgun Gothic', 'Courier New', monospace;
+  }
+  canvas {
+    border: 2px solid #444;
+    background-color: #000;
+    outline: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="640" height="480" tabindex="1"></canvas>
 
-# 게임 상태
-STATE_PLAYER_TURN = 0
-STATE_ATTACK_BAR = 1
-STATE_ENEMY_TURN = 2
-STATE_GAME_OVER = 3
-STATE_VICTORY = 4
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.focus();
 
-# 플레이어(영혼) 설정
-soul_size = 14
-soul_x = WIDTH // 2
-soul_y = 320
-soul_speed = 4
-player_hp = 90
-player_max_hp = 90
-tp = 0  # Tension Points (0 ~ 100)
+// 클릭 시 포커스 유지
+canvas.addEventListener("click", () => canvas.focus());
 
-# 보스(나이트) 설정
-boss_hp = 500
-boss_max_hp = 500
-boss_name = "ROARING KNIGHT"
+// 게임 상태 상수
+const STATE_PLAYER_TURN = 0;
+const STATE_ATTACK_BAR = 1;
+const STATE_ENEMY_TURN = 2;
+const STATE_GAME_OVER = 3;
+const STATE_VICTORY = 4;
 
-# 전투 박스 설정
-box_width, box_height = 180, 140
-box_x = WIDTH // 2 - box_width // 2
-box_y = 240
+let state = STATE_PLAYER_TURN;
+let tick = 0;
+let invincibleTimer = 0;
 
-# 메뉴 및 공격 게이지 설정
-menu_options = ["FIGHT", "ACT", "ITEM", "DEFEND"]
-selected_menu = 0
-attack_bar_x = 120
-attack_bar_speed = 7
-message_text = "* 어둠의 기사가 앞을 가로막았다!"
+// 플레이어(영혼) 설정
+let soulX = 320;
+let soulY = 310;
+const soulSpeed = 4;
+let playerHp = 90;
+const playerMaxHp = 90;
+let tp = 0;
 
-# 탄막 리스트
-bullets = []
-enemy_turn_timer = 0
-attack_pattern = 0
+// 보스(나이트) 설정
+let bossHp = 500;
+const bossMaxHp = 500;
+const bossName = "ROARING KNIGHT";
 
+// 전투 박스 설정
+const boxWidth = 180;
+const boxHeight = 140;
+const boxX = 320 - boxWidth / 2;
+const boxY = 240;
 
-def draw_heart(surface, x, y, color=RED):
-    """픽셀 느낌의 하트 그리기"""
-    pts = [
-        (x, y - 4), (x - 4, y - 8), (x - 8, y - 4),
-        (x - 8, y + 1), (x, y + 8), (x + 8, y + 1),
-        (x + 8, y - 4), (x + 4, y - 8)
-    ]
-    pygame.draw.polygon(surface, color, pts)
+// 메뉴 및 공격 게이지
+const menuOptions = ["FIGHT", "ACT", "ITEM", "DEFEND"];
+let selectedMenu = 0;
+let attackBarX = 120;
+const attackBarSpeed = 7;
+let messageText = "* 어둠의 기사가 앞을 가로막았다!";
 
+// 탄막 및 적 턴 변수
+let bullets = [];
+let enemyTurnTimer = 0;
+let attackPattern = 0;
 
-def draw_knight(surface, x, y, tick):
-    """나이트(보스) 스프라이트 도형으로 그리기"""
-    float_y = y + math.sin(tick * 0.05) * 6  # 둥실둥실 떠다니는 연출
+// 키 입력 상태 저장
+const keys = {};
+window.addEventListener("keydown", (e) => {
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Enter"].includes(e.code)) {
+    e.preventDefault();
+  }
+  keys[e.code] = true;
+  handleKeyPress(e.code);
+});
+window.addEventListener("keyup", (e) => {
+  keys[e.code] = false;
+});
 
-    # 망토 (어두운 보라색)
-    pygame.draw.polygon(surface, DARK_PURPLE, [
-        (x, float_y - 30), (x - 45, float_y + 50), (x + 45, float_y + 50)
-    ])
-    # 갑옷 몸통
-    pygame.draw.polygon(surface, WHITE, [
-        (x, float_y - 35), (x - 22, float_y + 10), (x, float_y + 35), (x + 22, float_y + 10)
-    ])
-    # 투구 및 뿔
-    pygame.draw.circle(surface, BLACK, (x, int(float_y - 42)), 14)
-    pygame.draw.polygon(surface, WHITE, [(x - 10, float_y - 48), (x - 25, float_y - 75), (x - 4, float_y - 52)])
-    pygame.draw.polygon(surface, WHITE, [(x + 10, float_y - 48), (x + 25, float_y - 75), (x + 4, float_y - 52)])
-    # 빛나는 바이저(눈)
-    pygame.draw.line(surface, CYAN, (x - 8, float_y - 42), (x + 8, float_y - 42), 3)
-    # 대검 (Dark Blade)
-    sword_offset = math.cos(tick * 0.05) * 4
-    pygame.draw.polygon(surface, CYAN, [
-        (x + 35, float_y - 20 + sword_offset),
-        (x + 42, float_y - 20 + sword_offset),
-        (x + 38, float_y + 60 + sword_offset)
-    ])
+function startEnemyTurn(msg) {
+  messageText = msg;
+  state = STATE_ENEMY_TURN;
+  enemyTurnTimer = 250;
+  attackPattern = Math.floor(Math.random() * 3);
+  soulX = boxX + boxWidth / 2;
+  soulY = boxY + boxHeight / 2;
+}
 
+function handleKeyPress(code) {
+  if (state === STATE_PLAYER_TURN) {
+    if (code === "ArrowLeft") {
+      selectedMenu = (selectedMenu - 1 + menuOptions.length) % menuOptions.length;
+    } else if (code === "ArrowRight") {
+      selectedMenu = (selectedMenu + 1) % menuOptions.length;
+    } else if (code === "KeyZ" || code === "Enter") {
+      const choice = menuOptions[selectedMenu];
+      if (choice === "FIGHT") {
+        state = STATE_ATTACK_BAR;
+        attackBarX = 120;
+      } else if (choice === "ACT") {
+        if (tp >= 25) {
+          tp -= 25;
+          playerHp = Math.min(playerMaxHp, playerHp + 30);
+          startEnemyTurn("* 영혼의 빛으로 HP를 30 회복했다! (TP -25%)");
+        } else {
+          startEnemyTurn("* 나이트의 갑옷은 차가운 어둠으로 덮여있다. (TP 25% 필요)");
+        }
+      } else if (choice === "ITEM") {
+        playerHp = Math.min(playerMaxHp, playerHp + 40);
+        startEnemyTurn("* 다크버거를 먹었다! HP가 40 회복되었다.");
+      } else if (choice === "DEFEND") {
+        tp = Math.min(100, tp + 20);
+        startEnemyTurn("* 방어 태세를 취했다! TP가 20% 올랐다.");
+      }
+    }
+  } else if (state === STATE_ATTACK_BAR) {
+    if (code === "KeyZ" || code === "Enter") {
+      const dist = Math.abs(320 - attackBarX);
+      const damage = Math.max(20, Math.floor(120 - dist * 0.6));
+      bossHp -= damage;
+      tp = Math.min(100, tp + 10);
+      if (bossHp <= 0) {
+        bossHp = 0;
+        state = STATE_VICTORY;
+      } else {
+        startEnemyTurn(`* 나이트에게 ${damage}의 데미지를 입혔다!`);
+      }
+    }
+  } else if (state === STATE_GAME_OVER || state === STATE_VICTORY) {
+    if (code === "KeyR") {
+      playerHp = playerMaxHp;
+      bossHp = bossMaxHp;
+      tp = 0;
+      bullets = [];
+      state = STATE_PLAYER_TURN;
+      messageText = "* 어둠의 기사가 다시 나타났다!";
+    }
+  }
+}
 
-def spawn_bullets(pattern, timer):
-    """나이트의 탄막 패턴 생성"""
-    if pattern == 0:
-        # 패턴 1: 위에서 떨어지는 어둠의 칼날 비
-        if timer % 15 == 0:
-            bx = random.randint(box_x + 10, box_x + box_width - 10)
-            bullets.append({"x": bx, "y": box_y - 20, "vx": 0, "vy": 3.5, "w": 6, "h": 18, "color": WHITE})
-    elif pattern == 1:
-        # 패턴 2: 양옆에서 교차로 날아오는 횡베기
-        if timer % 25 == 0:
-            side = random.choice([-1, 1])
-            bx = box_x - 20 if side == 1 else box_x + box_width + 20
-            by = random.randint(box_y + 15, box_y + box_height - 15)
-            bullets.append({"x": bx, "y": by, "vx": side * 4, "vy": 0, "w": 22, "h": 5, "color": CYAN})
-    elif pattern == 2:
-        # 패턴 3: 중앙을 향해 조여오는 원형 검기
-        if timer % 35 == 0:
-            angle = random.uniform(0, math.pi * 2)
-            dist = 130
-            bx = (box_x + box_width // 2) + math.cos(angle) * dist
-            by = (box_y + box_height // 2) + math.sin(angle) * dist
-            vx = -math.cos(angle) * 2.8
-            vy = -math.sin(angle) * 2.8
-            bullets.append({"x": bx, "y": by, "vx": vx, "vy": vy, "w": 10, "h": 10, "color": PURPLE})
+function drawHeart(x, y, color = "#FF0000") {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x, y - 4);
+  ctx.lineTo(x - 4, y - 8);
+  ctx.lineTo(x - 8, y - 4);
+  ctx.lineTo(x - 8, y + 1);
+  ctx.lineTo(x, y + 8);
+  ctx.lineTo(x + 8, y + 1);
+  ctx.lineTo(x + 8, y - 4);
+  ctx.lineTo(x + 4, y - 8);
+  ctx.closePath();
+  ctx.fill();
+}
 
+function drawKnight(x, y, t) {
+  const floatY = y + Math.sin(t * 0.05) * 6;
 
-# 메인 게임 루프
-state = STATE_PLAYER_TURN
-tick = 0
-invincible_timer = 0
+  // 망토
+  ctx.fillStyle = "#3C0064";
+  ctx.beginPath();
+  ctx.moveTo(x, floatY - 30);
+  ctx.lineTo(x - 45, floatY + 50);
+  ctx.lineTo(x + 45, floatY + 50);
+  ctx.closePath();
+  ctx.fill();
 
-while True:
-    tick += 1
-    screen.fill(BLACK)
+  // 갑옷 몸통
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.moveTo(x, floatY - 35);
+  ctx.lineTo(x - 22, floatY + 10);
+  ctx.lineTo(x, floatY + 35);
+  ctx.lineTo(x + 22, floatY + 10);
+  ctx.closePath();
+  ctx.fill();
 
-    # 이벤트 처리
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            sys.exit()
+  // 투구 및 뿔
+  ctx.fillStyle = "#000000";
+  ctx.beginPath();
+  ctx.arc(x, floatY - 42, 14, 0, Math.PI * 2);
+  ctx.fill();
 
-        if event.type == pygame.KEYDOWN:
-            # 1. 플레이어 메뉴 선택 턴
-            if state == STATE_PLAYER_TURN:
-                if event.key == pygame.K_LEFT:
-                    selected_menu = (selected_menu - 1) % len(menu_options)
-                elif event.key == pygame.K_RIGHT:
-                    selected_menu = (selected_menu + 1) % len(menu_options)
-                elif event.key in (pygame.K_z, pygame.K_RETURN):
-                    choice = menu_options[selected_menu]
-                    if choice == "FIGHT":
-                        state = STATE_ATTACK_BAR
-                        attack_bar_x = 120
-                    elif choice == "ACT":
-                        if tp >= 25:
-                            tp -= 25
-                            player_hp = min(player_max_hp, player_hp + 30)
-                            message_text = "* 영혼의 빛으로 HP를 30 회복했다! (TP -25%)"
-                        else:
-                            message_text = "* 나이트의 갑옷은 차가운 어둠으로 덮여있다. (회복은 TP 25% 필요)"
-                        state = STATE_ENEMY_TURN
-                        enemy_turn_timer = 240
-                        attack_pattern = random.randint(0, 2)
-                        soul_x, soul_y = box_x + box_width // 2, box_y + box_height // 2
-                    elif choice == "ITEM":
-                        player_hp = min(player_max_hp, player_hp + 40)
-                        message_text = "* 다크버거를 먹었다! HP가 40 회복되었다."
-                        state = STATE_ENEMY_TURN
-                        enemy_turn_timer = 240
-                        attack_pattern = random.randint(0, 2)
-                        soul_x, soul_y = box_x + box_width // 2, box_y + box_height // 2
-                    elif choice == "DEFEND":
-                        tp = min(100, tp + 20)
-                        message_text = "* 방어 태세를 취했다! TP가 20% 올랐다."
-                        state = STATE_ENEMY_TURN
-                        enemy_turn_timer = 240
-                        attack_pattern = random.randint(0, 2)
-                        soul_x, soul_y = box_x + box_width // 2, box_y + box_height // 2
+  ctx.fillStyle = "#FFFFFF";
+  ctx.beginPath();
+  ctx.moveTo(x - 10, floatY - 48);
+  ctx.lineTo(x - 25, floatY - 75);
+  ctx.lineTo(x - 4, floatY - 52);
+  ctx.fill();
 
-            # 2. 공격 타이밍 게이지 턴
-            elif state == STATE_ATTACK_BAR:
-                if event.key in (pygame.K_z, pygame.K_RETURN):
-                    # 중앙(320)에 가까울수록 높은 데미지
-                    dist = abs(320 - attack_bar_x)
-                    damage = max(20, int(120 - dist * 0.6))
-                    boss_hp -= damage
-                    tp = min(100, tp + 10)
-                    if boss_hp <= 0:
-                        boss_hp = 0
-                        state = STATE_VICTORY
-                    else:
-                        message_text = f"* 나이트에게 {damage}의 데미지를 입혔다!"
-                        state = STATE_ENEMY_TURN
-                        enemy_turn_timer = 260
-                        attack_pattern = random.randint(0, 2)
-                        soul_x, soul_y = box_x + box_width // 2, box_y + box_height // 2
+  ctx.beginPath();
+  ctx.moveTo(x + 10, floatY - 48);
+  ctx.lineTo(x + 25, floatY - 75);
+  ctx.lineTo(x + 4, floatY - 52);
+  ctx.fill();
 
-            # 게임 오버 / 승리 시 재시작
-            elif state in (STATE_GAME_OVER, STATE_VICTORY):
-                if event.key == pygame.K_r:
-                    player_hp = player_max_hp
-                    boss_hp = boss_max_hp
-                    tp = 0
-                    bullets.clear()
-                    state = STATE_PLAYER_TURN
-                    message_text = "* 어둠의 기사가 다시 나타났다!"
+  // 빛나는 바이저
+  ctx.strokeStyle = "#00FFFF";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, floatY - 42);
+  ctx.lineTo(x + 8, floatY - 42);
+  ctx.stroke();
 
-    # --- 상태별 업데이트 ---
-    if state == STATE_ATTACK_BAR:
-        attack_bar_x += attack_bar_speed
-        if attack_bar_x > 520:
-            message_text = "* 공격이 빗나갔다!"
-            state = STATE_ENEMY_TURN
-            enemy_turn_timer = 240
-            attack_pattern = random.randint(0, 2)
-            soul_x, soul_y = box_x + box_width // 2, box_y + box_height // 2
+  // 대검
+  const swordOffset = Math.cos(t * 0.05) * 4;
+  ctx.fillStyle = "#00FFFF";
+  ctx.beginPath();
+  ctx.moveTo(x + 35, floatY - 20 + swordOffset);
+  ctx.lineTo(x + 42, floatY - 20 + swordOffset);
+  ctx.lineTo(x + 38, floatY + 60 + swordOffset);
+  ctx.closePath();
+  ctx.fill();
+}
 
-    elif state == STATE_ENEMY_TURN:
-        enemy_turn_timer -= 1
-        if invincible_timer > 0:
-            invincible_timer -= 1
+function spawnBullets(pattern, timer) {
+  if (pattern === 0 && timer % 15 === 0) {
+    const bx = boxX + 10 + Math.random() * (boxWidth - 20);
+    bullets.push({ x: bx, y: boxY - 20, vx: 0, vy: 3.5, w: 6, h: 18, color: "#FFFFFF" });
+  } else if (pattern === 1 && timer % 25 === 0) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const bx = side === 1 ? boxX - 20 : boxX + boxWidth + 20;
+    const by = boxY + 15 + Math.random() * (boxHeight - 30);
+    bullets.push({ x: bx, y: by, vx: side * 4, vy: 0, w: 22, h: 5, color: "#00FFFF" });
+  } else if (pattern === 2 && timer % 35 === 0) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 130;
+    const bx = boxX + boxWidth / 2 + Math.cos(angle) * dist;
+    const by = boxY + boxHeight / 2 + Math.sin(angle) * dist;
+    bullets.push({
+      x: bx,
+      y: by,
+      vx: -Math.cos(angle) * 2.8,
+      vy: -Math.sin(angle) * 2.8,
+      w: 10,
+      h: 10,
+      color: "#A020F0"
+    });
+  }
+}
 
-        # 플레이어 이동 (Shift 누르면 저속 이동)
-        keys = pygame.key.get_pressed()
-        current_speed = soul_speed * 0.5 if (keys[pygame.K_LSHIFT] or keys[pygame.K_x]) else soul_speed
-        if keys[pygame.K_LEFT]:
-            soul_x -= current_speed
-        if keys[pygame.K_RIGHT]:
-            soul_x += current_speed
-        if keys[pygame.K_UP]:
-            soul_y -= current_speed
-        if keys[pygame.K_DOWN]:
-            soul_y += current_speed
+function rectIntersect(r1, r2) {
+  return !(r2.left > r1.right || r2.right < r1.left || r2.top > r1.bottom || r2.bottom < r1.top);
+}
 
-        # 전투 박스 경계 제한
-        soul_x = max(box_x + 10, min(box_x + box_width - 10, soul_x))
-        soul_y = max(box_y + 10, min(box_y + box_height - 10, soul_y))
+function update() {
+  tick++;
 
-        # 탄막 생성 및 이동
-        spawn_bullets(attack_pattern, enemy_turn_timer)
-        soul_rect = pygame.Rect(soul_x - 5, soul_y - 5, 10, 10)
-        graze_rect = pygame.Rect(soul_x - 14, soul_y - 14, 28, 28)
+  if (state === STATE_ATTACK_BAR) {
+    attackBarX += attackBarSpeed;
+    if (attackBarX > 520) {
+      startEnemyTurn("* 공격이 빗나갔다!");
+    }
+  } else if (state === STATE_ENEMY_TURN) {
+    enemyTurnTimer--;
+    if (invincibleTimer > 0) invincibleTimer--;
 
-        for b in bullets[:]:
-            b["x"] += b["vx"]
-            b["y"] += b["vy"]
-            b_rect = pygame.Rect(b["x"] - b["w"] // 2, b["y"] - b["h"] // 2, b["w"], b["h"])
+    const currentSpeed = (keys["ShiftLeft"] || keys["ShiftRight"] || keys["KeyX"]) ? soulSpeed * 0.5 : soulSpeed;
+    if (keys["ArrowLeft"]) soulX -= currentSpeed;
+    if (keys["ArrowRight"]) soulX += currentSpeed;
+    if (keys["ArrowUp"]) soulY -= currentSpeed;
+    if (keys["ArrowDown"]) soulY += currentSpeed;
 
-            # 그레이즈(스치기) 판정 -> TP 증가
-            if graze_rect.colliderect(b_rect) and not soul_rect.colliderect(b_rect):
-                if tick % 5 == 0:
-                    tp = min(100, tp + 1)
+    soulX = Math.max(boxX + 10, Math.min(boxX + boxWidth - 10, soulX));
+    soulY = Math.max(boxY + 10, Math.min(boxY + boxHeight - 10, soulY));
 
-            # 피격 판정
-            if soul_rect.colliderect(b_rect) and invincible_timer == 0:
-                player_hp -= 15
-                invincible_timer = 45
-                bullets.remove(b)
-                if player_hp <= 0:
-                    player_hp = 0
-                    state = STATE_GAME_OVER
+    spawnBullets(attackPattern, enemyTurnTimer);
 
-            # 화면 밖 탄막 제거
-            if b["x"] < 0 or b["x"] > WIDTH or b["y"] < 0 or b["y"] > HEIGHT:
-                if b in bullets:
-                    bullets.remove(b)
+    const soulRect = { left: soulX - 5, right: soulX + 5, top: soulY - 5, bottom: soulY + 5 };
+    const grazeRect = { left: soulX - 14, right: soulX + 14, top: soulY - 14, bottom: soulY + 14 };
 
-        # 적 턴 종료
-        if enemy_turn_timer <= 0:
-            bullets.clear()
-            state = STATE_PLAYER_TURN
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      b.x += b.vx;
+      b.y += b.vy;
 
-    # --- 화면 그리기 ---
-    # 1. 보스 및 보스 체력바
-    draw_knight(screen, WIDTH // 2, 115, tick)
-    pygame.draw.rect(screen, GRAY, (220, 20, 200, 12))
-    pygame.draw.rect(screen, CYAN, (220, 20, int(200 * (boss_hp / boss_max_hp)), 12))
-    boss_txt = font_small.render(f"{boss_name}  {boss_hp}/{boss_max_hp}", True, WHITE)
-    screen.blit(boss_txt, (220, 35))
+      const bRect = {
+        left: b.x - b.w / 2,
+        right: b.x + b.w / 2,
+        top: b.y - b.h / 2,
+        bottom: b.y + b.h / 2
+      };
 
-    # 2. TP 게이지 (왼쪽)
-    pygame.draw.rect(screen, WHITE, (30, 240, 22, 140), 2)
-    tp_height = int(136 * (tp / 100))
-    pygame.draw.rect(screen, YELLOW, (32, 240 + 138 - tp_height, 18, tp_height))
-    tp_txt = font_small.render(f"TP {tp}%", True, YELLOW)
-    screen.blit(tp_txt, (20, 385))
+      // 그레이즈 판정
+      if (rectIntersect(grazeRect, bRect) && !rectIntersect(soulRect, bRect)) {
+        if (tick % 5 === 0) tp = Math.min(100, tp + 1);
+      }
 
-    # 3. 상태별 중앙 박스 연출
-    if state == STATE_PLAYER_TURN:
-        pygame.draw.rect(screen, WHITE, (60, 240, 520, 140), 3)
-        msg_surf = font_main.render(message_text, True, WHITE)
-        screen.blit(msg_surf, (80, 265))
-        guide_surf = font_small.render("[방향키: 이동 / Z 또는 Enter: 선택 / 회피 중 Shift: 저속 이동]", True, GRAY)
-        screen.blit(guide_surf, (80, 345))
+      // 피격 판정
+      if (rectIntersect(soulRect, bRect) && invincibleTimer === 0) {
+        playerHp -= 15;
+        invincibleTimer = 45;
+        bullets.splice(i, 1);
+        if (playerHp <= 0) {
+          playerHp = 0;
+          state = STATE_GAME_OVER;
+        }
+        continue;
+      }
 
-    elif state == STATE_ATTACK_BAR:
-        pygame.draw.rect(screen, WHITE, (60, 240, 520, 140), 3)
-        # 타겟 영역
-        pygame.draw.rect(screen, DARK_PURPLE, (120, 260, 400, 100))
-        pygame.draw.rect(screen, CYAN, (310, 260, 20, 100))  # 크리티컬 존
-        # 움직이는 바
-        pygame.draw.rect(screen, WHITE, (attack_bar_x - 3, 255, 6, 110))
-        guide_surf = font_small.render("중앙에 맞춰 [Z] 또는 [Enter]를 누르세요!", True, YELLOW)
-        screen.blit(guide_surf, (190, 220))
+      if (b.x < 0 || b.x > 640 || b.y < 0 || b.y > 480) {
+        bullets.splice(i, 1);
+      }
+    }
 
-    elif state == STATE_ENEMY_TURN:
-        # 전투 박스
-        pygame.draw.rect(screen, WHITE, (box_x, box_y, box_width, box_height), 3)
-        # 영혼(하트) 그리기 (피격 무적 시 깜빡임)
-        if invincible_timer % 6 < 3:
-            draw_heart(screen, int(soul_x), int(soul_y), RED)
-        # 탄막 그리기
-        for b in bullets:
-            pygame.draw.rect(screen, b["color"], (b["x"] - b["w"] // 2, b["y"] - b["h"] // 2, b["w"], b["h"]))
+    if (enemyTurnTimer <= 0 && state === STATE_ENEMY_TURN) {
+      bullets = [];
+      state = STATE_PLAYER_TURN;
+    }
+  }
+}
 
-    elif state == STATE_GAME_OVER:
-        over_txt = font_title.render("GAME OVER - SOUL SHATTERED", True, RED)
-        retry_txt = font_main.render("다시 시작하려면 [R] 키를 누르세요.", True, WHITE)
-        screen.blit(over_txt, (WIDTH // 2 - over_txt.get_width() // 2, 260))
-        screen.blit(retry_txt, (WIDTH // 2 - retry_txt.get_width() // 2, 310))
+function draw() {
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, 640, 480);
 
-    elif state == STATE_VICTORY:
-        win_txt = font_title.render("VICTORY! THE KNIGHT RETREATS", True, YELLOW)
-        retry_txt = font_main.render("다시 플레이하려면 [R] 키를 누르세요.", True, WHITE)
-        screen.blit(win_txt, (WIDTH // 2 - win_txt.get_width() // 2, 260))
-        screen.blit(retry_txt, (WIDTH // 2 - retry_txt.get_width() // 2, 310))
+  // 1. 보스 및 체력바
+  drawKnight(320, 115, tick);
+  ctx.fillStyle = "#808080";
+  ctx.fillRect(220, 20, 200, 12);
+  ctx.fillStyle = "#00FFFF";
+  ctx.fillRect(220, 20, 200 * (bossHp / bossMaxHp), 12);
 
-    # 4. 하단 상태창 및 액션 버튼
-    hp_txt = font_main.render(f"KRIS   HP {player_hp} / {player_max_hp}", True, WHITE)
-    screen.blit(hp_txt, (70, 395))
-    pygame.draw.rect(screen, RED, (260, 400, 120, 16))
-    pygame.draw.rect(screen, GREEN, (260, 400, int(120 * (player_hp / player_max_hp)), 16))
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(`${bossName}  ${bossHp}/${bossMaxHp}`, 220, 48);
 
-    for i, opt in enumerate(menu_options):
-        btn_x = 70 + i * 135
-        btn_y = 430
-        color = YELLOW if (state == STATE_PLAYER_TURN and i == selected_menu) else WHITE
-        pygame.draw.rect(screen, color, (btn_x, btn_y, 115, 35), 2)
-        opt_surf = font_main.render(opt, True, color)
-        screen.blit(opt_surf, (btn_x + 22, btn_y + 5))
-        if state == STATE_PLAYER_TURN and i == selected_menu:
-            draw_heart(screen, btn_x + 12, btn_y + 18, RED)
+  // 2. TP 게이지
+  ctx.strokeStyle = "#FFFFFF";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(30, 240, 22, 140);
+  const tpHeight = 136 * (tp / 100);
+  ctx.fillStyle = "#FFFF00";
+  ctx.fillRect(32, 240 + 138 - tpHeight, 18, tpHeight);
+  ctx.font = "13px sans-serif";
+  ctx.fillText(`TP ${tp}%`, 20, 398);
 
-    pygame.display.flip()
-    clock.tick(60
+  // 3. 중앙 박스 연출
+  if (state === STATE_PLAYER_TURN) {
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(60, 240, 520, 140);
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 18px 'Malgun Gothic', sans-serif";
+    ctx.fillText(messageText, 80, 285);
+
+    ctx.fillStyle = "#888888";
+    ctx.font = "14px 'Malgun Gothic', sans-serif";
+    ctx.fillText("[방향키: 이동 / Z 또는 Enter: 선택 / 회피 중 Shift: 저속 이동]", 80, 355);
+  } else if (state === STATE_ATTACK_BAR) {
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(60, 240, 520, 140);
+
+    ctx.fillStyle = "#3C0064";
+    ctx.fillRect(120, 260, 400, 100);
+    ctx.fillStyle = "#00FFFF";
+    ctx.fillRect(310, 260, 20, 100);
+
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(attackBarX - 3, 255, 6, 110);
+
+    ctx.fillStyle = "#FFFF00";
+    ctx.font = "14px 'Malgun Gothic', sans-serif";
+    ctx.fillText("중앙에 맞춰 [Z] 또는 [Enter]를 누르세요!", 195, 228);
+  } else if (state === STATE_ENEMY_TURN) {
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+
+    if (invincibleTimer % 6 < 3) {
+      drawHeart(soulX, soulY, "#FF0000");
+    }
+
+    for (const b of bullets) {
+      ctx.fillStyle = b.color;
+      ctx.fillRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h);
+    }
+  } else if (state === STATE_GAME_OVER) {
+    ctx.fillStyle = "#FF0000";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("GAME OVER - SOUL SHATTERED", 320, 285);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "18px 'Malgun Gothic', sans-serif";
+    ctx.fillText("다시 시작하려면 [R] 키를 누르세요.", 320, 325);
+    ctx.textAlign = "left";
+  } else if (state === STATE_VICTORY) {
+    ctx.fillStyle = "#FFFF00";
+    ctx.font = "bold 28px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("VICTORY! THE KNIGHT RETREATS", 320, 285);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "18px 'Malgun Gothic', sans-serif";
+    ctx.fillText("다시 플레이하려면 [R] 키를 누르세요.", 320, 325);
+    ctx.textAlign = "left";
+  }
+
+  // 4. 하단 상태창 및 액션 버튼
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = "bold 18px sans-serif";
+  ctx.fillText(`KRIS   HP ${playerHp} / ${playerMaxHp}`, 70, 415);
+
+  ctx.fillStyle = "#FF0000";
+  ctx.fillRect(265, 400, 120, 16);
+  ctx.fillStyle = "#00FF00";
+  ctx.fillRect(265, 400, 120 * (playerHp / playerMaxHp), 16);
+
+  for (let i = 0; i < menuOptions.length; i++) {
+    const btnX = 70 + i * 135;
+    const btnY = 430;
+    const isSelected = state === STATE_PLAYER_TURN && i === selectedMenu;
+    const color = isSelected ? "#FFFF00" : "#FFFFFF";
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(btnX, btnY, 115, 35);
+
+    ctx.fillStyle = color;
+    ctx.font = "bold 18px sans-serif";
+    ctx.fillText(menuOptions[i], btnX + 25, btnY + 24);
+
+    if (isSelected) {
+      drawHeart(btnX + 13, btnY + 18, "#FF0000");
+    }
+  }
+}
+
+function gameLoop() {
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
+"""
+
+components.html(game_html, height=500)
